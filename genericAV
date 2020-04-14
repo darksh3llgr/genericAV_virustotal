@@ -1,0 +1,73 @@
+ 
+
+#!/usr/bin/perl
+
+use LWP::UserAgent;
+use JSON;
+use Digest::SHA qw(sha256_hex);
+use strict;
+#use warnings;
+
+my $dir = shift;
+my $uagent = LWP::UserAgent->new(ssl_opts => { verify_hostname => 1 });
+my $url='http://www.virustotal.com/vtapi/v2/file/report';
+my $key='YOUR API KEY';
+my @dateien;
+
+listFiles ($dir);
+
+# enable to control list directory;
+print "$_ \n" for @dateien;
+
+sub listFiles {
+    local *DH;
+    my ($item, $pfad);
+    my $dir = shift;
+
+    opendir (DH, $dir) or return;
+    while ($item = readdir (DH)) {
+          next if ( $item =~ /^\./ );
+          $pfad = ( ($dir =~ /\/$/) ? ($dir . $item) : ($dir . '/'.$item) );
+          listFiles ($pfad) if (-d $pfad);
+
+open FILE, "<$pfad";
+        my $digest = sha256_hex(<FILE>);
+close FILE;
+
+my $response = $uagent->post( $url,
+    [
+    'apikey' => $key,
+    'resource' => $digest
+    ]
+  );
+
+my $results=$response->content;
+my $json = JSON->new->allow_nonref;
+my $decjson = $json->decode( $results);
+
+#enable to control digest, files und path;
+#print $digest ."\n";
+#print @dateien ."\n";
+#print $pfad ."\n\n-----------------------\n\n";
+#print $item ."\n\n-----------------------\n\n";
+
+$json = JSON->new->allow_nonref;
+$decjson = $json->decode( $results);
+       print $decjson-> {"response_code"}."\n\n" ;
+        print $decjson-> {"positives"}."\n\n" ;
+
+#REPORT
+my $postives = $decjson-> {"positives"};
+if ($postives > 0)
+{
+        print "infected::VIRUSTOTAL_SIGNATUR_SCAN::$item"."\n";
+        open ERROR,  '>>', "/var/log/vt.log"  or die $!;
+        STDERR->fdopen( \*ERROR,  'w' ) or die $!;
+        print STDERR "$item"."\n";
+
+}
+}
+    closedir (DH);
+}
+
+#INFECTED::<virus name>::<directory>/<filename>
